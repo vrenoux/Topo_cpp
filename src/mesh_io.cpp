@@ -37,15 +37,15 @@ bool write_vtk(const Mesh &M, const std::string &filename)
     // Cells: compute total ints (nentries = sum(1 + nverts))
     uint32_t total_ints = 0;
     for (uint32_t c = 0; c < Nc; ++c) {
-        uint32_t off = T.c2n_offset[c];
-        uint32_t off2 = T.c2n_offset[c + 1];
+        uint32_t off = T.c2n_offsets[c];
+        uint32_t off2 = T.c2n_offsets[c + 1];
         total_ints += 1 + (off2 - off);
     }
 
     ofs << "CELLS " << Nc << " " << total_ints << "\n";
     for (uint32_t c = 0; c < Nc; ++c) {
-        uint32_t off = T.c2n_offset[c];
-        uint32_t off2 = T.c2n_offset[c + 1];
+        uint32_t off = T.c2n_offsets[c];
+        uint32_t off2 = T.c2n_offsets[c + 1];
         uint32_t len = off2 - off;
         ofs << len;
         for (uint32_t k = 0; k < len; ++k) {
@@ -62,7 +62,7 @@ bool write_vtk(const Mesh &M, const std::string &filename)
         case CellType::Tri3: vtktype = 5; break;     // VTK_TRIANGLE
         case CellType::Quad4: vtktype = 9; break;    // VTK_QUAD
         case CellType::Tet4: vtktype = 10; break;    // VTK_TETRA
-        case CellType::HeX8: vtktype = 12; break;    // VTK_HEXAHEDRON
+        case CellType::Hex8: vtktype = 12; break;    // VTK_HEXAHEDRON
         default: vtktype = 0; break;
         }
         ofs << vtktype << "\n";

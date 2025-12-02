@@ -33,14 +33,14 @@ msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y
 
     // --- Topology: c2n (CSR ragged), ctype ---
     T.ctype.resize(Nc, msh::CellType::Quad4);
-    T.c2n_offset.resize(Nc + 1);
+    T.c2n_offsets.resize(Nc + 1);
     T.c2n_indices.resize(4 * Nc);
 
     uint32_t off = 0;
     for (uint32_t j = 0; j < Ny; ++j) {
         for (uint32_t i = 0; i < Nx; ++i) {
             const uint32_t c = i + j * Nx;
-            T.c2n_offset[c] = off;
+            T.c2n_offsets[c] = off;
             // Quad local (orientation CCW) :
             //  n3 --- n2
             //  |       |
@@ -57,8 +57,7 @@ msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y
             off += 4;
         }
     }
-    T.c2n_offset[Nc] = off;
+    T.c2n_offsets[Nc] = off;
 
     return M;
 }
-
