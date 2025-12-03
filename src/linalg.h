@@ -1,4 +1,4 @@
-#ifndef LINALG__H
+#ifndef LINALG_H
 #define LINALG_H
 
 #include <vector>
@@ -16,7 +16,7 @@ namespace fem
         std::vector<double> vals;
         uint32_t n; // matrice carrée n x n
 
-        SparseMatrixCOO(uint32_t n_);
+        explicit SparseMatrixCOO(uint32_t n_);
         void add(uint32_t i, uint32_t j, double v);
         size_t get_nnz() const;
     };

@@ -61,6 +61,7 @@ bool write_vtk(const Mesh &M, const std::string &filename)
         switch (T.ctype[c]) {
         case CellType::Tri3: vtktype = 5; break;     // VTK_TRIANGLE
         case CellType::Quad4: vtktype = 9; break;    // VTK_QUAD
+        case CellType::Quad4Reg: vtktype = 9; break;    // VTK_QUAD
         case CellType::Tet4: vtktype = 10; break;    // VTK_TETRA
         case CellType::Hex8: vtktype = 12; break;    // VTK_HEXAHEDRON
         default: vtktype = 0; break;

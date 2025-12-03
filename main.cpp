@@ -6,13 +6,18 @@
 #include "./src/mesh_core.h" 
 #include "./src/mesh_gen.h" 
 #include "./src/mesh_io.h" 
+#include "./src/linalg.h"
+#include "./src/material.h"
+#include "./src/element.h"
+#include "./src/assembler.h"
+#include "./src/boundary.h"
 
 
 int main() {
     std::cout << "Hello, C++ est bien configuré !" << std::endl;
 
-    uint32_t const Nx = 1000;
-    uint32_t const Ny = 100;
+    uint32_t const Nx = 2; // nombre d'éléments en x
+    uint32_t const Ny = 2;  // nombre d'éléments en y
 
     double const hx = 5.0;
     double const hy = 3.0;
@@ -24,6 +29,12 @@ int main() {
     std::cout << "nodes=" << M.geo.n_nodes() << std::endl;
     std::cout << "cells=" << M.topo.n_cells() << std::endl;
 
+
+    fem::SparseMatrixCSR K = fem::assemble_rigidity_matrix(M);
+
+    std::cout << "K: nrows=" << K.nrows << ", ncols=" << K.ncols << ", nnz=" << K.col_indices.size() << "\n";  
+
+    
 
 
     // Exporter en VTK (legacy ASCII)

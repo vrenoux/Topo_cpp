@@ -6,7 +6,12 @@
 namespace fem {
 
 // SparseMatrixCOO
-SparseMatrixCOO::SparseMatrixCOO(uint32_t n_) : n(n_) {}
+SparseMatrixCOO::SparseMatrixCOO(uint32_t n_) : n(n_) {
+        size_t estimated_nnz = n * 10; // exemple : 10 entrées par ligne
+        rows.reserve(estimated_nnz);
+        cols.reserve(estimated_nnz);
+        vals.reserve(estimated_nnz);
+}
 
 void SparseMatrixCOO::add(uint32_t i, uint32_t j, double v) {
     rows.push_back(i);
@@ -15,6 +20,8 @@ void SparseMatrixCOO::add(uint32_t i, uint32_t j, double v) {
 }
 
 size_t SparseMatrixCOO::get_nnz() const { return vals.size(); }
+
+
 // SparseMatrixCSR
 SparseMatrixCSR::SparseMatrixCSR() = default;
 
@@ -44,7 +51,6 @@ void SparseMatrixCSR::build_from_coo(const SparseMatrixCOO& coo, bool sum_duplic
         if (coo.rows[a] != coo.rows[b]) return coo.rows[a] < coo.rows[b];
         return coo.cols[a] < coo.cols[b];
     });
-
 
     // (2) Fusion des doublons consécutifs
     std::vector<uint32_t> fused_cols;

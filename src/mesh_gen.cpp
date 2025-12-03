@@ -32,7 +32,7 @@ msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y
     }
 
     // --- Topology: c2n (CSR ragged), ctype ---
-    T.ctype.resize(Nc, msh::CellType::Quad4);
+    T.ctype.resize(Nc, msh::CellType::Quad4Reg);
     T.c2n_offsets.resize(Nc + 1);
     T.c2n_indices.resize(4 * Nc);
 
