@@ -9,6 +9,7 @@
 #include <cassert> 
 #include <array>
 #include <vector>
+#include <iostream>
 
 
 namespace fem {
@@ -76,6 +77,7 @@ SparseMatrixCSR assemble_rigidity_matrix(const msh::Mesh& mesh){
             }
             // Ajouter d'autres types d'éléments ici si nécessaire
         }
+        std::cout << "Assembled element " << e + 1 << " / " << mesh.topo.n_cells() << "\r" << std::flush;
     }
 
     SparseMatrixCSR K_full_csr;

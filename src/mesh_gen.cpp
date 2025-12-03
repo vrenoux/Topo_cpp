@@ -2,7 +2,7 @@
 #include <cassert>      // Pour les assertions
 #include <stdexcept>    // Pour les exceptions
 
-msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y0, double hx, double hy)
+msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y0, double Hx, double Hy)
 {
     msh::Mesh M;
     msh::Geometry& G = M.geo;
@@ -12,6 +12,8 @@ msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y
     const uint32_t ny = Ny + 1;
     const uint32_t Nn = nx * ny;     // nb de noeuds
     const uint32_t Nc = Nx * Ny;     // nb de cellules
+    const double hx = Hx/Nx;        // taille élément en x
+    const double hy = Hy/Ny;        // taille élément en y
 
     // --- Geometry: coord. SoA (z vide en 2D) ---
     G.x.resize(Nn);

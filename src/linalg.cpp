@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <numeric>
 #include <cassert>
+#include <iostream>
 
 namespace fem {
 
@@ -86,6 +87,7 @@ void SparseMatrixCSR::build_from_coo(const SparseMatrixCOO& coo, bool sum_duplic
             flush_entry(curr_row, curr_col, curr_val);
             curr_row = r; curr_col = c; curr_val = v;
         }
+        std::cout << "Processing entry " << t + 1 << " / " << nnz_in << "\r" << std::flush;
     }
     flush_entry(curr_row, curr_col, curr_val);
 

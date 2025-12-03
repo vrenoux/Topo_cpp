@@ -5,6 +5,8 @@
 #include <cstdint>
 #include <numeric>
 #include <algorithm>
+#include <iomanip> 
+#include <iostream>
 
 namespace fem
 {
@@ -57,6 +59,52 @@ namespace fem
         
     };
 
+
+    struct VectorDense
+    {
+        std::vector<double> data;
+
+        explicit VectorDense(size_t n) : data(n, 0.0) {}
+
+        size_t size() const { return data.size(); }
+
+        double &operator[](size_t i) { return data[i]; }
+        const double &operator[](size_t i) const { return data[i]; }
+    };
+
+inline void print_dense(const SparseMatrixCSR& A, std::ostream& os = std::cout) {
+    const uint32_t nrows = A.nrows;
+    const uint32_t ncols = A.ncols;
+
+    for (uint32_t i = 0; i < nrows; ++i) {
+        const uint32_t start = A.row_offsets[i];
+        const uint32_t end   = A.row_offsets[i + 1];
+
+        // Pointeur dans la bande CSR de la ligne i
+        uint32_t p = start;
+
+        for (uint32_t j = 0; j < ncols; ++j) {
+            double val = 0.0;
+
+            // Si on est toujours dans la bande et que la colonne matche, on lit
+            if (p < end && A.col_indices[p] == j) {
+                val = A.values[p];
+                ++p; // avance au prochain NNZ de la ligne
+            }
+
+            os << val << (j + 1 < ncols ? " " : "");
+        }
+        os << '\n';
+    }
 }
+
+inline void print_vector_dense(const VectorDense& v, std::ostream& os = std::cout) {
+    for (size_t i = 0; i < v.size(); ++i) {
+        os << v[i] << (i + 1 < v.size() ? " " : "");
+    }
+    os << '\n';
+}
+
+} // namespace fem
 
 #endif
