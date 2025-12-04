@@ -4,15 +4,7 @@
         {
             "label": "build main",
             "type": "shell",
-            "command": "g++",
-            "args": [
-                "-fdiagnostics-color=always",
-                "-g",
-                "main.cpp",
-                "src/*.cpp",
-                "-o",
-                "main"
-            ],
+            "command": "./build.sh",
             "options": {
                 "cwd": "${workspaceFolder}"
             },
