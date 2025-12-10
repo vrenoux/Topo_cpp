@@ -9,67 +9,122 @@
 
 namespace msh {
 
+struct FaceKey {
+    std::array<uint32_t, 4> nodes; // Max 4 noeuds (Hex8 face = Quad4)
+    uint8_t n_cnt;                 // Nombre de noeuds (2, 3 ou 4)
+
+    // Constructeur optimisé : prend une liste d'initialisation {a, b, c...}
+    FaceKey(std::initializer_list<uint32_t> list) {
+        n_cnt = static_cast<uint8_t>(list.size());
+        auto it = list.begin();
+        for(int i = 0; i < n_cnt; ++i) {
+            nodes[i] = *it;
+            ++it;
+        }
+        // TRI LOCAL : Indispensable pour l'unicité (1-2-3 == 3-1-2)
+        std::sort(nodes.begin(), nodes.begin() + n_cnt);
+    }
+
+    // Opérateur < pour std::sort
+    bool operator<(const FaceKey& other) const {
+        if (n_cnt != other.n_cnt) return n_cnt < other.n_cnt;
+        for(int i = 0; i < n_cnt; ++i) {
+            if (nodes[i] != other.nodes[i]) return nodes[i] < other.nodes[i];
+        }
+        return false;
+    }
+
+    // Opérateur == pour détecter les doublons
+    bool operator==(const FaceKey& other) const {
+        if (n_cnt != other.n_cnt) return false;
+        for(int i = 0; i < n_cnt; ++i) {
+            if (nodes[i] != other.nodes[i]) return false;
+        }
+        return true;
+    }
+};
+
 void Mesh::compute_boundary_elements() {
     boundary.clear();
 
-    std::map<std::vector<uint32_t>, int> face_counts;
+    std::vector<FaceKey> all_faces;
+    all_faces.reserve(topo.n_cells() * 6);
 
-    // 1. Compter les occurences des faces
-    for(size_t i=0; i<topo.n_cells(); ++i) {
-        auto nodes = topo.get_nodes_cell(i);
+    // 1 : Extraction de toutes les faces (soupe de faces)
+
+    for (size_t i = 0; i < topo.n_cells(); ++i) {
+        // On récupère les indices bruts des noeuds de l'élément i
+        // (Supposons que get_nodes_cell renvoie un const std::vector<uint32_t>& ou un span)
+        const auto& n = topo.get_nodes_cell(i);
         CellType type = topo.ctype[i];
+
+        // On "pousse" les faces directement dans le vecteur.
+        // Les indices ci-dessous suivent la numérotation standard (VTK/Gmsh).
         
-        // Récupérer les faces locales brutes
-        auto faces = get_local_faces(type, nodes);
+        switch (type) {
+            // --- 2D ---
+            case CellType::Tri3: // Faces = Arêtes (2 noeuds)
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[0], n[1]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[1], n[2]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[2], n[0]});
+                break;
 
-        for(auto& face : faces) {
-            // On trie les indices pour que la face (1,5,2) soit égale à (1,2,5)
-            std::vector<uint32_t> sorted_face = face;
-            std::sort(sorted_face.begin(), sorted_face.end());
-            face_counts[sorted_face]++;
+            case CellType::Quad4:
+            case CellType::Quad4Reg: // Faces = Arêtes (2 noeuds)
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[0], n[1]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[1], n[2]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[2], n[3]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[3], n[0]});
+                break;
+
+            // --- 3D ---
+            case CellType::Tet4: // Faces = Triangles (3 noeuds)
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[0], n[2], n[1]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[0], n[1], n[3]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[1], n[2], n[3]});
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[0], n[3], n[2]});
+                break;
+
+            case CellType::Hex8: // Faces = Quads (4 noeuds)
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[0], n[3], n[2], n[1]}); // Bottom
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[4], n[5], n[6], n[7]}); // Top
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[0], n[1], n[5], n[4]}); // Front
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[1], n[2], n[6], n[5]}); // Right
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[2], n[3], n[7], n[6]}); // Back
+                all_faces.emplace_back(std::initializer_list<uint32_t>{n[3], n[0], n[4], n[7]}); // Left 
+                break;
+
+            default:
+
+                break;
         }
     }
-    // 2. Garder celles qui apparaissent 1 seule fois
-    for(auto const& [key_nodes, count] : face_counts) {
-        if(count == 1) {
-            // C'est une frontière !
+
+    // 2 : Le Tri (Sort) - O(N log N)
+    std::sort(all_faces.begin(), all_faces.end());
+
+    // 3 : Le Scan (Linear) - O(N)
+    size_t i = 0;
+    while (i < all_faces.size()) {
+        bool is_internal = (i + 1 < all_faces.size()) && (all_faces[i] == all_faces[i + 1]);
+
+        if (is_internal) {
+            // C'est une face INTERNE (partagée par 2 éléments).
+            const auto& current_ref = all_faces[i];
+            while (i < all_faces.size() && all_faces[i] == current_ref) {
+                i++;
+            }
+        } else {
+            // C'est une face de BORD (unique).
             BoundaryElement be;
-            be.node_ids = key_nodes; // (Note: elles sont triées ici, pour l'intégration ça ne change rien si shape function simple)
+            be.node_ids.assign(all_faces[i].nodes.begin(), all_faces[i].nodes.begin() + all_faces[i].n_cnt);
             
-            compute_measure_and_center(be);
-            boundary.push_back(be);
+            compute_measure_and_center(be); 
+            
+            boundary.push_back(std::move(be));
+            i++; 
         }
     }
-}
-
-std::vector<std::vector<uint32_t>> Mesh::get_local_faces(CellType type, const std::vector<uint32_t>& n) const {
-    std::vector<std::vector<uint32_t>> faces;
-            
-    switch(type) {
-        case CellType::Tri3: // 2D -> Faces sont des lignes
-            faces = {{n[0], n[1]}, {n[1], n[2]}, {n[2], n[0]}}; 
-            break;
-        case CellType::Quad4: // 2D -> Faces sont des lignes
-            faces = {{n[0], n[1]}, {n[1], n[2]}, {n[2], n[3]}, {n[3], n[0]}};
-            break;
-        case CellType::Quad4Reg: // 2D -> Faces sont des lignes
-            faces = {{n[0], n[1]}, {n[1], n[2]}, {n[2], n[3]}, {n[3], n[0]}};
-            break;
-        case CellType::Tet4: // 3D -> Faces sont des Tri3
-            // Faces d'un tétraèdre : (0,1,2), (0,1,3), (1,2,3), (0,2,3)
-            faces = {{n[0],n[2],n[1]}, {n[0],n[1],n[3]}, {n[1],n[2],n[3]}, {n[0],n[3],n[2]}};
-            break;
-        case CellType::Hex8: // 3D -> Faces sont des Quad4
-            // 6 faces (indices standards VTK/Gmsh)
-            faces = {
-                {n[0],n[3],n[2],n[1]}, {n[4],n[5],n[6],n[7]}, // Bottom, Top
-                {n[0],n[1],n[5],n[4]}, {n[1],n[2],n[6],n[5]}, // Side
-                {n[2],n[3],n[7],n[6]}, {n[3],n[0],n[4],n[7]}  // Side
-            };
-            break;
-        default: break;
-    }
-    return faces;
 }
 
 void Mesh::compute_measure_and_center(BoundaryElement& be) {

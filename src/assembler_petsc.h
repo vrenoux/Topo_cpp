@@ -112,15 +112,13 @@ inline std::vector<double> assembler_petsc(const msh::Mesh& mesh,
         // (sinon b reste à 0, ce qui est OK pour un test)
     }
 
-
     // Après l’assemblage :
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
-    save_petsc_binary(A, "A.dat"); // Sauvegarde binaire de la matrice A
-
+    
+    //save_petsc_binary(A, "A.dat"); // Sauvegarde binaire de la matrice A
 
     //AttachMechanicsNullSpace(A, mesh);
-
 
     // ASSEMBLAGE NEUMANN
     VecSet(b, 0.0);
@@ -181,9 +179,6 @@ inline std::vector<double> assembler_petsc(const msh::Mesh& mesh,
     KSPSetFromOptions(ksp); // permet de configurer en ligne de commande
 
     // ========================================================================
-
-    PetscLogStage stage; PetscLogStageRegister("Factorisation",&stage);
-    PetscLogStagePush(stage); /* ... factoriser ... */ PetscLogStagePop();
 
     std::cout << "Solving linear system with PETSc KSP...\n";
     KSPSolve(ksp, b, x);
