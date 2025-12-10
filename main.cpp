@@ -15,29 +15,23 @@
 
 #include "./src/conjugate_gradient.h"
 
-
-
 int main(int argc, char **argv) {
     std::cout << "Hello, C++ est bien configuré !" << std::endl;
 
-    uint32_t const Nx = 300; // nombre d'éléments en x
-    uint32_t const Ny = 150;  // nombre d'éléments en y
+    uint32_t const fac_mesh = 500;
 
+    uint32_t const Nx = 4 * fac_mesh; // nombre d'éléments en x
+    uint32_t const Ny = 3 * fac_mesh;  // nombre d'éléments en y
+  
     double const Hx = 300.0;
     double const Hy = 120.0;
 
     msh::Mesh M = make_structured_quads_2D(Nx, Ny, /*x0*/0.0, /*y0*/0.0, Hx, Hy);
-
-    std::vector<double> f(M.geo.n_nodes(),0.0);
+    std::cout << "Computing boundary elements..." << std::endl;
+    M.compute_boundary_elements();
 
     std::cout << "nodes=" << M.geo.n_nodes() << std::endl;
     std::cout << "cells=" << M.topo.n_cells() << std::endl;
-
-
-    fem::SparseMatrixCSR K = fem::assemble_rigidity_matrix(M);
-
-    std::cout << "K: nrows=" << K.nrows << ", ncols=" << K.ncols << ", nnz=" << K.col_indices.size() << "\n";  
-
 
     fem::BoundaryConditions bcs;
 
@@ -45,48 +39,24 @@ int main(int argc, char **argv) {
     bcs.add_dirichlet_line_x(0.0, 1e-6, {0.0, 0.0, 0.0});
 
     // Neumann sur x = L
-    bcs.add_neumann_line_x(Hx, 1e-6, {0.0, -10000.0, 0.0});
+    bcs.add_neumann_line_x(Hx, 1e-6, {0.0, -1000.0, 0.0});
 
-    bcs.apply_dirichlet(K, bcs, M);
-    fem::VectorDense F = bcs.apply_neumann(M);
-    std::cout << "F size: " << F.size() << std::endl;
-    //fem::print_vector_dense(F);
-
-    // --- Solve K x = F using the centralized Conjugate Gradient implementation ---
-    std::vector<double> b(F.data.begin(), F.data.end());
-    std::vector<double> x(K.ncols, 0.0);
-
-    fem::CGResult cg_res = fem::conjugate_gradient(K, b, x, 1e-8, 10000, /*use_jacobi=*/true, /*verbose=*/true);
-
-    std::cout << "CG converged: " << (cg_res.converged ? "yes" : "no")
-              << ", iters=" << cg_res.iters
-              << ", final_res_norm=" << cg_res.final_res_norm << std::endl;
-
-    fem::VectorDense U(x.size());
-    for (size_t i = 0; i < x.size(); ++i) U[i] = x[i];
-    std::cout << "Solution vector U:\n";
-    //fem::print_vector_dense(U);
-
-    // Export mesh + displacement field U to VTK
-    // fem::VectorDense exposes .data (std::vector<double>)
-    if (!msh::write_vtk(M, "mesh_with_u.vtk", U.data)) {
-        std::cerr << "Failed to write mesh_with_u.vtk\n";
-    } else {
-        std::cout << "Wrote mesh_with_u.vtk (contains POINT_DATA U)\n";
-    }
-
-    std::cout << "Finished successfully.\n";
     std::cout << "===========================\n";
-    std::cout << "PETSc test\n";
 
     PetscInitialize(&argc, &argv, NULL, NULL);
     PetscInt major, minor, subminor, release;
     PetscGetVersionNumber(&major, &minor, &subminor, &release);
     PetscPrintf(PETSC_COMM_WORLD, "PETSc version: %d.%d.%d\n", major, minor, subminor);
 
-    std::cout << "===========================\n";
+    std::clock_t t0_cpu = std::clock();
 
     std::vector<double> x_petsc = assembler_petsc(M, 1, fem::LinearElasticityMaterial(200e3, 0.3, 1), bcs);
+
+    std::clock_t t1_cpu = std::clock();
+
+    double dt_cpu  = double(t1_cpu - t0_cpu) / CLOCKS_PER_SEC;
+
+    std::cout << "[TIMER] assembler_petsc - cpu: " << dt_cpu << " s\n";
 
     //Convert PETSc solution to VectorDense and export
     fem::VectorDense U_petsc(x_petsc.size());

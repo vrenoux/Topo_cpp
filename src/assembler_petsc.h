@@ -8,30 +8,54 @@
 #include "element.h"
 #include "boundary.h"
 
+
+inline void save_petsc_binary(Mat A, const char* fname /* ex. "A.dat" */) {
+    PetscViewer viewer;
+    PetscViewerBinaryOpen(PETSC_COMM_WORLD, fname, FILE_MODE_WRITE, &viewer);  // ouvre un viewer binaire
+    MatView(A, viewer);                                                         // export binaire de la matrice
+    PetscViewerDestroy(&viewer);
+}
+
+PetscErrorCode AttachMechanicsNullSpace(Mat A, const msh::Mesh& mesh);
+
+
 inline std::vector<double> assembler_petsc(const msh::Mesh& mesh,
                             const double& thickness,
                             const fem::LinearElasticityMaterial& material,
                             const fem::BoundaryConditions& bcs){
     
     const PetscInt dim = static_cast<PetscInt>(mesh.geo.dim);
-    const PetscInt N = static_cast<PetscInt>(mesh.geo.n_nodes() * dim); // 2 dof par nœud en 2D
+    const PetscInt n_nodes = static_cast<PetscInt>(mesh.geo.n_nodes());
+    const PetscInt N_dof = n_nodes * dim;
 
     Mat A;
     MatCreate(PETSC_COMM_WORLD, &A);
-    MatSetSizes(A, PETSC_DECIDE, PETSC_DECIDE, N, N);
+    MatSetSizes(A, PETSC_DECIDE, PETSC_DECIDE, N_dof, N_dof);
+
+
+    MatSetType(A, MATBAIJ); // MATSEQBAIJ ou MATMPIBAIJ choisi automatiquement
+    MatSetBlockSize(A, dim);
+
+    PetscInt nz_blocks = 9; // estimation grossière du nombre de blocs non-nuls par ligne (pour Quad4Reg)
+    MatMPIBAIJSetPreallocation(A, dim, nz_blocks, NULL, nz_blocks, NULL); // Ignoré si sequentiel
+    MatSeqBAIJSetPreallocation(A, dim, nz_blocks, NULL); // Ignoré si parallèle
+    
+    MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_FALSE);
     MatSetFromOptions(A);   // Autorise -mat_type aij, baij, etc. en ligne de commande
     MatSetUp(A);            // Alloue la structure interne (réallocations possibles ensuite)
 
     Vec b, x;
     VecCreate(PETSC_COMM_WORLD, &b);
-    VecSetSizes(b, PETSC_DECIDE, N);
+    VecSetSizes(b, PETSC_DECIDE, N_dof);
     VecSetFromOptions(b);
     VecDuplicate(b, &x);
 
     //MatSetOption(A, MAT_NEW_NONZERO_ALLOCATION_ERR, PETSC_TRUE); // En dev, tu peux activer cette option pour t’assurer que tu ne crées pas de nouveaux non-nuls
 
     // ASSEMBLAGE
+
     for (size_t e = 0; e < mesh.topo.n_cells(); ++e) {
+        std::cout << "Assembled element " << e + 1 << " / " << mesh.topo.n_cells() << "\r" << std::flush;
         if (mesh.topo.ctype[e] != msh::CellType::Quad4Reg) {
             // si tu as d’autres éléments, gère-les ici
             continue;
@@ -59,8 +83,15 @@ inline std::vector<double> assembler_petsc(const msh::Mesh& mesh,
         std::array<double, fem::Quad4RegularElement::ndof * fem::Quad4RegularElement::ndof> Ke;
         elem.compute_stiffness(coords, Ke);
 
+
+        MatSetValuesBlocked(A,
+                            fem::Quad4RegularElement::n_nodes, reinterpret_cast<const PetscInt*>(elem.node_ids.data()),
+                            fem::Quad4RegularElement::n_nodes, reinterpret_cast<const PetscInt*>(elem.node_ids.data()),
+                            Ke.data(),
+                            ADD_VALUES);
+
         // indices DOF globaux (taille 8)
-        std::array<PetscInt, fem::Quad4RegularElement::ndof> gidx;
+/*         std::array<PetscInt, fem::Quad4RegularElement::ndof> gidx;
         {
             constexpr int dim = fem::Quad4RegularElement::dim; // dim
             for (int i = 0; i < fem::Quad4RegularElement::ndof; ++i) {
@@ -75,29 +106,32 @@ inline std::vector<double> assembler_petsc(const msh::Mesh& mesh,
                      fem::Quad4RegularElement::ndof, gidx.data(),
                      fem::Quad4RegularElement::ndof, gidx.data(),
                      Ke.data(),
-                     ADD_VALUES);
+                     ADD_VALUES); */
 
         // si tu as un fe (second membre), insère-le ici via VecSetValues(b, ...)
         // (sinon b reste à 0, ce qui est OK pour un test)
     }
 
-    // ASSEMBLAGE FIN (fusion doublons, tri, routing MPI)
+
+    // Après l’assemblage :
     MatAssemblyBegin(A, MAT_FINAL_ASSEMBLY);
     MatAssemblyEnd(A, MAT_FINAL_ASSEMBLY);
+    save_petsc_binary(A, "A.dat"); // Sauvegarde binaire de la matrice A
+
+
+    //AttachMechanicsNullSpace(A, mesh);
+
 
     // ASSEMBLAGE NEUMANN
     VecSet(b, 0.0);
-    for (const auto& nbc : bcs.neumanns) {
-        auto nodes = nbc.selector->select(mesh);
-        for (auto node : nodes) {
-            for (uint32_t d = 0; d < mesh.geo.dim; ++d) {
-                // Ajout fx, fy (et fz si dim=3)
-                const PetscInt dof = static_cast<PetscInt>(node * mesh.geo.dim + d);
-                const PetscScalar val = static_cast<PetscScalar>(nbc.value[d]);
-                VecSetValue(b, dof, val, ADD_VALUES);
-            }
-        }
+    auto all_loads = bcs.compute_neumann_loads(mesh);
+
+    for (const auto& load : all_loads) {
+        const PetscInt dof = static_cast<PetscInt>(load.node_index * mesh.geo.dim + load.dof_index);
+        const PetscScalar val = static_cast<PetscScalar>(load.value);
+        VecSetValue(b, dof, val, ADD_VALUES);
     }
+
     VecAssemblyBegin(b);
     VecAssemblyEnd(b);
 
@@ -120,20 +154,38 @@ inline std::vector<double> assembler_petsc(const msh::Mesh& mesh,
 
     if (!dirichlet_rows.empty()) {
         // Hard constraint: zéro des lignes + diag=1, RHS ajusté (valeur imposée = 0)
-        MatZeroRows(A,
-                    static_cast<PetscInt>(dirichlet_rows.size()),
-                    dirichlet_rows.data(),
-                    /*diag=*/1.0,
-                    /*x=*/x, /*b=*/b);
+        MatZeroRowsColumns(A, 
+                   static_cast<PetscInt>(dirichlet_rows.size()),
+                   dirichlet_rows.data(),
+                   1.0, // Diagonale
+                   x, b);
     }
 
+    
+    // ========================================================================
     //Solve 
     KSP ksp;
     KSPCreate(PETSC_COMM_WORLD, &ksp);
+
     KSPSetOperators(ksp, A, A);
-    // KSPSetType(ksp, KSPCG);
+    KSPSetType(ksp, KSPCG); 
+    PC pc;
+    KSPGetPC(ksp, &pc);
+    
+    PCSetType(pc, PCHYPRE);               // On active Hypre
+    PCHYPRESetType(pc, "boomeramg");      // On choisit BoomerAMG
+    PetscOptionsSetValue(NULL, "-pc_hypre_boomeramg_strong_threshold", "0.5");
+    KSPSetTolerances(ksp, 1e-8, PETSC_DEFAULT, PETSC_DEFAULT, PETSC_DEFAULT); // tol, ksp, rtol, abstol, dtol, maxits
+
+
     KSPSetFromOptions(ksp); // permet de configurer en ligne de commande
 
+    // ========================================================================
+
+    PetscLogStage stage; PetscLogStageRegister("Factorisation",&stage);
+    PetscLogStagePush(stage); /* ... factoriser ... */ PetscLogStagePop();
+
+    std::cout << "Solving linear system with PETSc KSP...\n";
     KSPSolve(ksp, b, x);
     PetscInt its; PetscReal r;
     KSPGetIterationNumber(ksp, &its);
@@ -141,10 +193,10 @@ inline std::vector<double> assembler_petsc(const msh::Mesh& mesh,
     PetscPrintf(PETSC_COMM_WORLD, "KSP its=%d, residual=%e\n", (int)its, (double)r);
 
     // Extract solution to std::vector before destroying
-    std::vector<double> solution(N);
+    std::vector<double> solution(N_dof);
     PetscScalar *x_array;
     VecGetArray(x, &x_array);
-    for (PetscInt i = 0; i < N; ++i) {
+    for (PetscInt i = 0; i < N_dof; ++i) {
         solution[i] = static_cast<double>(x_array[i]);
     }
     VecRestoreArray(x, &x_array);

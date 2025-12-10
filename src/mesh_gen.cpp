@@ -15,6 +15,8 @@ msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y
     const double hx = Hx/Nx;        // taille élément en x
     const double hy = Hy/Ny;        // taille élément en y
 
+    G.dim = 2;
+
     // --- Geometry: coord. SoA (z vide en 2D) ---
     G.x.resize(Nn);
     G.y.resize(Nn);
@@ -60,6 +62,8 @@ msh::Mesh make_structured_quads_2D(uint32_t Nx, uint32_t Ny, double x0, double y
         }
     }
     T.c2n_offsets[Nc] = off;
+
+    
 
     return M;
 }
