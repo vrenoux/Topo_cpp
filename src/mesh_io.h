@@ -2,19 +2,27 @@
 #define MESH_IO_H
 
 #include <string>
-#include "mesh_core.h"
 #include <vector>
+#include <variant> // C++17 requis
+#include "mesh_core.h"
 
 namespace msh {
 
-// Écrit le maillage M dans un fichier VTK (legacy, ASCII)
-// Retourne true si l'écriture a réussi.
-bool write_vtk(const Mesh &M, const std::string &filename);
+    // Type de donnée pour l'export
+    enum class FieldType { Scalar, Vector };
+    enum class FieldLocation { Node, Cell };
 
-// Écrit le maillage M dans un fichier VTK (legacy, ASCII) et ajoute un champ
-// nodal vecteur `U` (taille = geo.ndof(), ordonnancement par noeud: [u0_x,u0_y(,u0_z), u1_x,...]).
-// Retourne true si l'écriture a réussi.
-bool write_vtk(const Mesh &M, const std::string &filename, const std::vector<double> &U);
+    // Structure générique pour décrire un champ à exporter
+    struct VtkField {
+        std::string name;
+        FieldType type;
+        FieldLocation location;
+        const std::vector<double>& data; // Référence vers les données (pas de copie)
+    };
+
+    // Fonction principale unique : Écrit le maillage + une liste arbitraire de champs
+    bool write_vtk(const Mesh &M, const std::string &filename, 
+                   const std::vector<VtkField>& fields = {});
 
 } // namespace msh
 

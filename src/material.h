@@ -14,12 +14,13 @@ struct LinearElasticityMaterial {
     double E; // Module de Young
     double v; // Coefficient de Poisson
     int ptype; // 1: plane stress, 2: plane strain, 3: 3D
+    double thickness = 1.0; // Épaisseur (pour éléments 2D)
 
     // Matrice constitutive D (max 6x6 pour 3D)
     std::array<double, 36> D{}; // Stockée en row-major
     int mat_size; // Taille réelle (3 pour 2D, 6 pour 3D)
 
-    LinearElasticityMaterial(double E_, double v_, int ptype_) : E(E_), v(v_), ptype(ptype_) {
+    LinearElasticityMaterial(double E_, double v_, int ptype_, double thickness_ = 1.0) : E(E_), v(v_), ptype(ptype_), thickness(thickness_) {
         compute_constitutive();
     }
 

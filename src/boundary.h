@@ -47,17 +47,22 @@ namespace fem {
     // Boundary conditions
     // ------------------------------------------------------------------------
 
-    struct DirichletBC {
-        std::array<double,3> value; // ux, uy, uz
-        std::unique_ptr<NodeSelector> selector;
+    // Homogeneous Dirichlet
 
-        static DirichletBC constant(std::unique_ptr<NodeSelector> sel, std::array<double,3> val) {
+    struct DirichletBC {
+        std::array<bool, 3> is_blocked; // Exemple : {true, true, false} -> Bloque X et Y, laisse Z libre.
+    
+        std::unique_ptr<NodeSelector> selector; // Sélecteur de noeuds
+
+        static DirichletBC clamp(std::unique_ptr<NodeSelector> sel, std::array<bool,3> mask) {
             DirichletBC bc;
             bc.selector = std::move(sel);
-            bc.value = val;
+            bc.is_blocked = mask;
             return bc;
         }
     };
+
+    // Neumann
 
     struct NodalLoad {
         uint32_t node_index;
@@ -115,39 +120,42 @@ namespace fem {
     };
 
 
+   // ------------------------------------------------------------------------
+    // BoundaryConditions: collection de BCs
+    // ------------------------------------------------------------------------
+
     struct BoundaryConditions {
         std::vector<DirichletBC> dirichlets;
         std::vector<NeumannBC>   neumanns;
 
-        void add_dirichlet(std::unique_ptr<NodeSelector> sel, std::array<double,3> val) {
-            dirichlets.push_back(DirichletBC::constant(std::move(sel), val));
+        void add_dirichlet(std::unique_ptr<NodeSelector> sel, std::array<bool,3> mask) {
+            dirichlets.push_back(DirichletBC::clamp(std::move(sel), mask));
         }
 
         void add_neumann(std::unique_ptr<NodeSelector> sel, std::array<double,3> val) {
             neumanns.push_back(NeumannBC::constant(std::move(sel), val));
         }
 
-        // Helpers pour éviter make_unique dans le main
-        void add_dirichlet_line_x(double x0, double tol, std::array<double,3> val) {
-            add_dirichlet(std::make_unique<LineXSelector>(x0, tol), val);
-        }
-
-        void add_neumann_line_x(double x0, double tol, std::array<double,3> val) {
-            add_neumann(std::make_unique<LineXSelector>(x0, tol), val);
-        }
-
-        void apply_dirichlet(SparseMatrixCSR& K, const BoundaryConditions& bcs,const msh::Mesh& mesh) {
-            std::vector<uint32_t> dofs;
-            uint32_t dim = mesh.geo.dim;
-            for (const auto& bc : bcs.dirichlets) {
+        std::vector<int32_t> compute_dirichlet_dofs(const msh::Mesh& mesh) const {
+            std::vector<int32_t> blocked_dofs;
+            
+            for(const auto& bc : dirichlets) {
                 auto nodes = bc.selector->select(mesh);
-                for (auto node : nodes) {
-                    for (uint32_t d = 0; d < dim; ++d) {
-                        dofs.push_back(node * dim + d);
+
+                for(auto n : nodes) {
+                    for(int d = 0; d < mesh.geo.dim; ++d) {
+                        if(bc.is_blocked[d]) {
+                            blocked_dofs.push_back(n * mesh.geo.dim + d);
+                        }
                     }
                 }
             }
-            K.apply_dirichlet_batch(dofs);
+
+            // Nettoyage (Tri + Unique) indispensable pour optimiser l'application Dirichlet sur la matrice en hard constraints via PETSC
+            std::sort(blocked_dofs.begin(), blocked_dofs.end());
+            blocked_dofs.erase(std::unique(blocked_dofs.begin(), blocked_dofs.end()), blocked_dofs.end());
+
+            return blocked_dofs;
         }
 
         std::vector<NodalLoad> compute_neumann_loads(const msh::Mesh& mesh) const {
@@ -160,6 +168,15 @@ namespace fem {
                 all_loads.insert(all_loads.end(), local_loads.begin(), local_loads.end());
             }
             return all_loads;
+        }
+
+        // Helpers pour éviter make_unique dans le main
+        void add_dirichlet_line_x(double x0, double tol, std::array<bool,3> mask) {
+            add_dirichlet(std::make_unique<LineXSelector>(x0, tol), mask);
+        }
+
+        void add_neumann_line_x(double x0, double tol, std::array<double,3> val) {
+            add_neumann(std::make_unique<LineXSelector>(x0, tol), val);
         }
     };
 
