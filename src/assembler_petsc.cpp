@@ -5,11 +5,13 @@
 #include "mesh_core.h"
 #include "material.h"
 #include "element.h"
+#include "optimizer.h"
 
 
 template <typename ElementType>
 void process_element_batch(Mat A, const msh::Mesh& mesh, uint32_t cell_id, 
-                           const fem::LinearElasticityMaterial& mat) {
+                           const fem::LinearElasticityMaterial& mat,
+                           const Penalization& penalization) {
     
     // 1. Récupération des indices des nœuds du maillage
     auto node_indices_vec = mesh.topo.get_nodes_cell(cell_id);
@@ -33,6 +35,13 @@ void process_element_batch(Mat A, const msh::Mesh& mesh, uint32_t cell_id,
     std::array<double, ElementType::ndof * ElementType::ndof> Ke;
     elem.compute_stiffness(coords, Ke);
 
+    // 4b. Appliquer la densité (pour l'optimisation topologique)
+    double density = mesh.density[cell_id];
+    for (size_t i = 0; i < Ke.size(); ++i) {
+        Ke[i] *= penalization.get_penalized_density(density);
+
+    }
+
     // 5. Préparation des indices pour PETSc
     std::array<PetscInt, ElementType::n_nodes> petsc_rows;
     for(size_t i=0; i<ElementType::n_nodes; ++i) {
@@ -49,9 +58,8 @@ void process_element_batch(Mat A, const msh::Mesh& mesh, uint32_t cell_id,
 
 void assemble_rigidity(Mat A,
                        const msh::Mesh& mesh,
-                       const fem::LinearElasticityMaterial& mat){
-    
-    std::cout << "Assembling rigidity matrix..." << std::endl;
+                       const fem::LinearElasticityMaterial& mat,
+                       const Penalization& penalization) {
 
     for (size_t e = 0; e < mesh.topo.n_cells(); ++e) {
         
@@ -63,7 +71,7 @@ void assemble_rigidity(Mat A,
 
         switch (type) {
             case msh::CellType::Quad4Reg:
-                process_element_batch<fem::Quad4RegularElement>(A, mesh, e, mat);
+                process_element_batch<fem::Quad4RegularElement>(A, mesh, e, mat, penalization);
                 break;
 
             default:
@@ -118,8 +126,6 @@ std::vector<double> compute_energy(const Vec& u,
     
     const PetscScalar* u_ptr;
     VecGetArrayRead(u, &u_ptr); // Accès en lecture seule aux données de u
-
-    std::cout << "Computing strain energy map..." << std::endl;
 
     std::vector<double> energy(mesh.topo.n_cells(), 0.0);
 

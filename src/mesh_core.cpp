@@ -184,5 +184,41 @@ void Mesh::compute_measure_and_center(BoundaryElement& be) {
     }
 }
 
+void Mesh::compute_volume_cells() {
+    volume_cells.resize(topo.n_cells(), 0.0);
 
+    for (size_t i = 0; i < topo.n_cells(); ++i) {
+        CellType type = topo.ctype[i];
+        const auto& n = topo.get_nodes_cell(i);
+
+        double cell_volume = 0.0;
+
+        switch (type) {
+            case CellType::Quad4Reg: {
+
+                const uint32_t n0 = n[0];
+                const uint32_t n1 = n[1];
+                const uint32_t n2 = n[2];
+                const uint32_t n3 = n[3];
+
+                const double x0 = geo.x[n0], y0 = geo.y[n0];
+                const double x1 = geo.x[n1], y1 = geo.y[n1];
+                const double x2 = geo.x[n2], y2 = geo.y[n2];
+                const double x3 = geo.x[n3], y3 = geo.y[n3];
+
+                double twice_area = (x0 * y1 + x1 * y2 + x2 * y3 + x3 * y0)
+                                   - (y0 * x1 + y1 * x2 + y2 * x3 + y3 * x0);
+
+                cell_volume = 0.5 * std::abs(twice_area);
+                break;
+            }
+
+
+        }
+
+        volume_cells[i] = cell_volume;
+    }
+
+    volume_total = std::accumulate(volume_cells.begin(), volume_cells.end(), 0.0);
+}
 } // namespace msh

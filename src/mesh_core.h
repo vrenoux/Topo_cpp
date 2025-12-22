@@ -7,6 +7,8 @@
 #include <cmath>
 #include <array>
 #include <algorithm>
+#include <numeric>
+
 
 namespace msh {
 
@@ -44,14 +46,18 @@ namespace msh {
         double center_x, center_y, center_z;
     };
 
-
     struct Mesh {
         Geometry geo;
         Topology topo;
 
         std::vector<BoundaryElement> boundary;
+        std::vector<double> volume_cells;
+        double volume_total;
+        std::vector<double> density;
 
         void compute_boundary_elements();
+
+        void compute_volume_cells();
 
         private:
             std::vector<std::vector<uint32_t>> get_local_faces(CellType type, const std::vector<uint32_t>& cell_nodes) const;

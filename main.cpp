@@ -1,73 +1,56 @@
-#include <iostream>  // Pour afficher dans la console
-#include <vector>    // Pour utiliser les vecteurs
-#include <cstdint>   // Pour les types entiers à largeur fixe
-#include <petsc.h>  // Inclure PETSc
+#include <iostream>
+#include <vector>
+#include <cstdint>
+#include <numeric>
+#include <petsc.h>
 
-#include "./src/mesh_core.h" 
-#include "./src/mesh_gen.h" 
-#include "./src/mesh_io.h" 
-#include "./src/linalg.h"
+#include "./src/mesh_core.h"
+#include "./src/mesh_gen.h"
+#include "./src/mesh_io.h"
 #include "./src/material.h"
-#include "./src/element.h"
 #include "./src/boundary.h"
 #include "./src/assembler_petsc.h"
-
-#include "./src/conjugate_gradient.h"
+#include "./src/optimizer.h"
 
 int main(int argc, char **argv) {
-    std::cout << "Hello, C++ est bien configuré !" << std::endl;
+    PetscInitialize(&argc, &argv, NULL, NULL);
 
-    uint32_t const fac_mesh = 50;
-
-    uint32_t const Nx = 4 * fac_mesh; // nombre d'éléments en x
-    uint32_t const Ny = 3 * fac_mesh;  // nombre d'éléments en y
-  
-    double const Hx = 300.0;
-    double const Hy = 120.0;
+    const uint32_t fac_mesh = 100; // ajustable
+    const uint32_t Nx = 4 * fac_mesh;
+    const uint32_t Ny = 3 * fac_mesh;
+    const double Hx = 300.0;
+    const double Hy = 120.0;
 
     msh::Mesh M = make_structured_quads_2D(Nx, Ny, /*x0*/0.0, /*y0*/0.0, Hx, Hy);
     std::cout << "Computing boundary elements..." << std::endl;
     M.compute_boundary_elements();
+    M.compute_volume_cells();
 
-    std::cout << "nodes=" << M.geo.n_nodes() << std::endl;
-    std::cout << "cells=" << M.topo.n_cells() << std::endl;
+    std::cout << "Number of nodes: " << M.geo.n_nodes() << std::endl;
+    std::cout << "Number of elements: " << M.topo.n_cells() << std::endl;
+
+    const size_t n_cells = M.topo.n_cells();
+    const double vol_frac = 0.5;
+    M.density.assign(n_cells, vol_frac);
 
     fem::BoundaryConditions bcs;
-
-    // Dirichlet sur x = 0
     bcs.add_dirichlet_line_x(0.0, 1e-6, {true, true, true});
-
-    // Neumann sur x = L
     bcs.add_neumann_line_x(Hx, 1e-6, {0.0, -1000.0, 0.0});
 
-    std::cout << "===========================\n";
+    fem::LinearElasticityMaterial mat(200e3, 0.3, 1, 1.0);
 
-    PetscInitialize(&argc, &argv, NULL, NULL);
-    PetscInt major, minor, subminor, release;
-    PetscGetVersionNumber(&major, &minor, &subminor, &release);
-    PetscPrintf(PETSC_COMM_WORLD, "PETSc version: %d.%d.%d\n", major, minor, subminor);
+    Optimizer opt;
+    opt.setMaxIter(50);
+    opt.setVolumeFractionConstraint(vol_frac);
+    opt.setNDesignVariables(static_cast<int>(n_cells));
+    opt.setPenalization(Penalization{3.0});
 
-    std::clock_t t0_cpu = std::clock();
-
-    Solution sol = assembler_petsc(M, fem::LinearElasticityMaterial(200e3, 0.3, 1, 1.0), bcs);
-
-    std::clock_t t1_cpu = std::clock();
-
-    double dt_cpu  = double(t1_cpu - t0_cpu) / CLOCKS_PER_SEC;
-
-    std::cout << "[TIMER] assembler_petsc - cpu: " << dt_cpu << " s\n";
-
-    msh::write_vtk(M, "resultats.vtk", {
-    {"Displacement", msh::FieldType::Vector, msh::FieldLocation::Node, sol.displacements},
-    {"StrainEnergy", msh::FieldType::Scalar, msh::FieldLocation::Cell, sol.energy_map}
-    });
+    std::vector<double> xmin(n_cells, 1e-2);
+    std::vector<double> xmax(n_cells, 1.0);
+    opt.setDesignVariableBounds(xmin, xmax);
+    M.density.assign(M.topo.n_cells(), 0.5);
+    opt.Optimize(mat, M, bcs);
 
     PetscFinalize();
-
-    // Exporter en VTK (legacy ASCII)
-    //const bool ok = msh::write_vtk(M, "mesh.vtk");
-    //if (ok) std::cout << "Wrote mesh.vtk" << std::endl;
-    //else std::cout << "Failed to write mesh.vtk" << std::endl;
-
-    return 0; // Indique que le programme s'est terminé correctement
+    return 0; 
 }
