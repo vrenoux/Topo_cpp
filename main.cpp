@@ -15,7 +15,7 @@
 int main(int argc, char **argv) {
     PetscInitialize(&argc, &argv, NULL, NULL);
 
-    const uint32_t fac_mesh = 100; // ajustable
+    const uint32_t fac_mesh = 900; // ajustable
     const uint32_t Nx = 4 * fac_mesh;
     const uint32_t Ny = 3 * fac_mesh;
     const double Hx = 300.0;
